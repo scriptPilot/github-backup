@@ -7,9 +7,27 @@ import credentials from './credentials.js'
 
 const { username, token, folder } = credentials
 
+const startTime = (new Date()).getTime()
+const safetyFactor = 5
+const requestPerHour = 5000 / safetyFactor
+let requestNumber = 0
+
+function wait(seconds) {
+  return new Promise(resolve => {
+    console.log(`... wait ${seconds}s`)
+    setTimeout(() => {
+      resolve()
+    }, seconds * 1000)
+  })
+}
+
 function request(path, options = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const baseUrl = path.substr(0, 4) !== 'http' ? 'https://api.github.com' : ''
+    requestNumber++
+    const allowedRequests = ( ( (new Date()).getTime() ) - startTime ) * ( requestPerHour / 3600 / 1000 )
+    if (requestNumber > allowedRequests) await wait(1) s + ' requests')
+    console.log(`Request #${requestNumber}: ${baseUrl}${path}`)
     fetch(`${baseUrl}${path}`, {
       headers: {
         Authorization: `Token ${token}`
@@ -44,11 +62,11 @@ function requestAll(path, options) {
       let page = 1
       while (page !== null) {          
         const separator = path.indexOf('?') === -1 ? '?' : '&'
-        const moreItemsResponse = await request(`${path}${separator}page=${page}`, options) 
+        const moreItemsResponse = await request(`${path}${separator}per_page=100&page=${page}`, options) 
         const moreItems = await moreItemsResponse.json()
         if (moreItems.length) {
           items = [...items, ...moreItems]
-          page++
+          page = moreItems.length === 100 ? page + 1 : null
         } else {
           page = null
         }
@@ -129,7 +147,7 @@ async function backup() {
         )
 
         // Get issue comments
-        const comments = await requestAll(issues[issueId].comments_url)
+        const comments = issues[issueId].comments !== 0 ? await requestAll(issues[issueId].comments_url) : []
 
         // Add issue comments to issues JSON
         issues[issueId].comments = comments
@@ -169,7 +187,7 @@ async function backup() {
     shell.exit(1)
 
   } catch (err) {
-    throw err
+    throw new Error(err)
   }
 }
 
