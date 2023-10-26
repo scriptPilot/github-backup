@@ -26,7 +26,7 @@ function request(path, options = {}) {
     const baseUrl = path.substr(0, 4) !== 'http' ? 'https://api.github.com' : ''
     requestNumber++
     const allowedRequests = ( ( (new Date()).getTime() ) - startTime ) * ( requestPerHour / 3600 / 1000 )
-    if (requestNumber > allowedRequests) await wait(1) s + ' requests')
+    if (requestNumber > allowedRequests) await wait(1)
     console.log(`Request #${requestNumber}: ${baseUrl}${path}`)
     fetch(`${baseUrl}${path}`, {
       headers: {
