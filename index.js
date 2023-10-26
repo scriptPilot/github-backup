@@ -5,16 +5,16 @@ import fetch from 'node-fetch'
 import { extension } from 'mime-types'
 import credentials from './credentials.js'
 
+const perPage = 100
+const retryCount = 10
+const retryDelayRateLimit = 6 * 60
+const retryDelayOthers = 6
+
 const { username, token, folder } = credentials
 
-const startTime = (new Date()).getTime()
-const safetyFactor = 5
-const requestPerHour = 5000 / safetyFactor
-let requestNumber = 0
-
-function wait(seconds) {
+function delay(seconds) {
   return new Promise(resolve => {
-    console.log(`... wait ${seconds}s`)
+    console.log(`... delay ${seconds}s`)
     setTimeout(() => {
       resolve()
     }, seconds * 1000)
@@ -24,22 +24,29 @@ function wait(seconds) {
 function request(path, options = {}) {
   return new Promise(async (resolve, reject) => {
     const baseUrl = path.substr(0, 4) !== 'http' ? 'https://api.github.com' : ''
-    requestNumber++
-    const allowedRequests = ( ( (new Date()).getTime() ) - startTime ) * ( requestPerHour / 3600 / 1000 )
-    if (requestNumber > allowedRequests) await wait(1)
-    console.log(`Request #${requestNumber}: ${baseUrl}${path}`)
-    fetch(`${baseUrl}${path}`, {
-      headers: {
-        Authorization: `Token ${token}`
-      },
-      ...options
-    })
-    .then(resp => {
-      resolve(resp)
-    })
-    .catch(err => {
-      reject(err)
-    })
+    console.log(`Request ${baseUrl}${path}`)
+    for (let n = 1; n <= retryCount; n++) {
+      const resp = await fetch(`${baseUrl}${path}`, {
+        headers: {
+          Authorization: `Token ${token}`
+        },
+        ...options
+      })
+      if (resp.ok) {
+        resolve(resp)
+      } else {
+        const rateLimitRemaining = parseInt([ ...resp.headers ].filter(obj => obj[0] === 'x-ratelimit-remaining')[0][1])
+        const rateLimitLimit = parseInt([ ...resp.headers ].filter(obj => obj[0] === 'x-ratelimit-limit')[0][1])
+        console.log(`... failed at #${n} attempt`)
+        if (rateLimitRemaining === 0) {
+          console.log(`... API rate limit of ${rateLimitLimit} requests per hour exceeded`)
+          if (n < retryCount) await delay(retryDelayRateLimit)
+        } else {
+          if (n < retryCount) await delay(retryDelayOthers)
+        }
+      }
+    }
+    reject()
   })
 }
 
@@ -62,11 +69,11 @@ function requestAll(path, options) {
       let page = 1
       while (page !== null) {          
         const separator = path.indexOf('?') === -1 ? '?' : '&'
-        const moreItemsResponse = await request(`${path}${separator}per_page=100&page=${page}`, options) 
+        const moreItemsResponse = await request(`${path}${separator}per_page=${perPage}&page=${page}`, options) 
         const moreItems = await moreItemsResponse.json()
         if (moreItems.length) {
           items = [...items, ...moreItems]
-          page = moreItems.length === 100 ? page + 1 : null
+          page = moreItems.length === perPage ? page + 1 : null
         } else {
           page = null
         }
