@@ -5,7 +5,7 @@ Local backup of your GitHub data.
 ## In Scope
 
 - ✅ Repositories: cloned, public and private ones
-- ✅ Issues: including comments and images
+- ✅ Issues: including comments and images, open and closed ones
 - ✅ User: details and starred repositories  
 
 ## In Progress
