@@ -3,7 +3,6 @@ import shell from 'shelljs'
 import { dirname, basename } from 'path'
 import fetch from 'node-fetch'
 import { extension } from 'mime-types'
-import credentials from './credentials.js'
 
 shell.config.fatal = true
 
@@ -12,7 +11,8 @@ const retryCount = 10
 const retryDelayRateLimit = 6 * 60
 const retryDelayOthers = 6
 
-const { username, token, folder } = credentials
+const { USERNAME, TOKEN } = process.env
+const FOLDER = '/usr/src/backup'
 
 function delay(seconds) {
   return new Promise(resolve => {
@@ -32,7 +32,7 @@ function request(path, options = {}) {
       try {
         resp = await fetch(`${baseUrl}${path}`, {
           headers: {
-            Authorization: `Token ${token}`
+            Authorization: `Token ${TOKEN}`
           },
           ...options
         })
@@ -125,15 +125,15 @@ function downloadFile(sourceFileUrl, targetFilePath) {
   })
 }
 
-function downloadAssets(body, folder, filename) {
+function downloadAssets(body, FOLDER, filename) {
   return new Promise(async (resolve, reject) => {
     try {
       const assets = body?.match(/["(]https:\/\/github\.com\/(.+)\/assets\/(.+)[)"]/g) || []
       for (const assetId in assets) {
         const targetFilename = filename.replace('{id}', assetId)
-        const targetPath = folder + '/' + targetFilename
+        const targetPath = FOLDER + '/' + targetFilename
         const sourceUrl = assets[assetId].replace(/^["(](.+)[)"]$/, '$1')
-        fs.ensureDirSync(folder)
+        fs.ensureDirSync(FOLDER)
         const realTargetFilename = basename(await downloadFile(sourceUrl, targetPath))
         body = body.replace(`"${sourceUrl}"`, '"file://./assets/' + realTargetFilename + '"')
         body = body.replace(`(${sourceUrl})`, '(file://./assets/' + realTargetFilename + ')')
@@ -153,20 +153,20 @@ function writeJSON(path, json) {
 async function backup() {
   try {
 
-    // Reset the backup folder
-    fs.emptyDirSync(folder)
+    // Reset the backup FOLDER
+    fs.emptyDirSync(FOLDER)
 
     // Get repositories
     const repositories = await requestAllWithRetry('/user/repos')
 
     // Save repositories
-    writeJSON(`${folder}/repositories.json`, repositories)
+    writeJSON(`${FOLDER}/repositories.json`, repositories)
 
     // Loop repositories
     for (const repository of repositories) {
 
       // Get issues
-      const issues = await requestAllWithRetry(`/repos/${username}/${repository.name}/issues?state=all`)
+      const issues = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/issues?state=all`)
 
       // Loop issues
       for (const issueId in issues) {
@@ -174,7 +174,7 @@ async function backup() {
         // Download issue assets
         issues[issueId].body = await downloadAssets(
           issues[issueId].body,
-          `${folder}/repositories/${repository.name}/assets`,
+          `${FOLDER}/repositories/${repository.name}/assets`,
           `issue_${issueId}_{id}`
         )
 
@@ -190,7 +190,7 @@ async function backup() {
           // Download issue assets
           issues[issueId].comments[commentId].body = await downloadAssets(
             issues[issueId].comments[commentId].body,
-            `${folder}/repositories/${repository.name}/assets`,
+            `${FOLDER}/repositories/${repository.name}/assets`,
             `issue_${issueId}_comment_${commentId}_{id}`
           )
 
@@ -199,20 +199,20 @@ async function backup() {
       }
 
       // Save issues
-      writeJSON(`${folder}/repositories/${repository.name}/issues.json`, issues)
+      writeJSON(`${FOLDER}/repositories/${repository.name}/issues.json`, issues)
 
       // Clone repository
-      shell.exec(`git clone https://${token}@github.com/${username}/${repository.name}.git ${folder}/repositories/${repository.name}/repository`)
+      shell.exec(`git clone https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git ${FOLDER}/repositories/${repository.name}/repository`)
 
     }
 
     // Get user details
     const user = await requestJson('/user')
-    writeJSON(`${folder}/user/user.json`, user)
+    writeJSON(`${FOLDER}/user/user.json`, user)
 
     // Get starred repositories
     const starred = await requestAllWithRetry('/user/starred')
-    writeJSON(`${folder}/user/starred.json`, starred)
+    writeJSON(`${FOLDER}/user/starred.json`, starred)
 
     // Complete script    
     console.log('Backup completed!')

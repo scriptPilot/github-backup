@@ -1,9 +1,7 @@
-.PHONY: backup docker_cleanup
-
-backup: docker_run
+include ./.env
 
 docker_run: docker_build
-	docker run --rm --name github-backup github-backup
+	docker run --rm --name github-backup -v $(FOLDER):/usr/src/backup --env-file ./.env github-backup 
 
 docker_build: docker_cleanup
 	docker build -t github-backup .

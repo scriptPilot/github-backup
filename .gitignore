@@ -4,5 +4,5 @@
 # NPM Modules
 node_modules/
 
-# Credentials File
-credentials.js
+# Environment Variables File
+.env

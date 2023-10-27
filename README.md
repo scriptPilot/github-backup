@@ -18,5 +18,5 @@ Local backup of your GitHub data.
 Requirements: Docker
 
 1. Clone this repository
-2. Update and save `credentials.template.js` as `credentials.js`
+2. Update and save `.env.template` file as `.env`
 3. Run `make` to start the backup process
