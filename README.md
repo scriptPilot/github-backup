@@ -15,7 +15,7 @@ Local backup of your GitHub data.
 
 ## Usage
 
-Requirements: Docker
+Requirements: [Docker](https://www.docker.com/), [GitHub Token](https://github.com/settings/tokens)
 
 1. Clone this repository
 2. Update and save `.env.template` file as `.env`
