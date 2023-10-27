@@ -5,6 +5,8 @@ import fetch from 'node-fetch'
 import { extension } from 'mime-types'
 import credentials from './credentials.js'
 
+shell.config.fatal = true
+
 const perPage = 100
 const retryCount = 10
 const retryDelayRateLimit = 6 * 60
@@ -152,8 +154,7 @@ async function backup() {
   try {
 
     // Reset the backup folder
-    shell.exec(`rm -r ${folder}`)
-    fs.ensureDirSync(folder)
+    fs.emptyDirSync(folder)
 
     // Get repositories
     const repositories = await requestAllWithRetry('/user/repos')

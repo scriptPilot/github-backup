@@ -15,7 +15,7 @@ Local backup of your GitHub data.
 
 ## Usage
 
-Requirements: Node.js
+Requirements: Docker
 
 1. Clone this repository
 2. Update and save `credentials.template.js` as `credentials.js`
