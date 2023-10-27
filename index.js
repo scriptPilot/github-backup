@@ -16,7 +16,7 @@ function delay(seconds) {
   return new Promise(resolve => {
     console.log(`... delay ${seconds}s`)
     setTimeout(() => {
-      resolve()
+      return resolve()
     }, seconds * 1000)
   })
 }
@@ -26,14 +26,25 @@ function request(path, options = {}) {
     const baseUrl = path.substr(0, 4) !== 'http' ? 'https://api.github.com' : ''
     console.log(`Request ${baseUrl}${path}`)
     for (let n = 1; n <= retryCount; n++) {
-      const resp = await fetch(`${baseUrl}${path}`, {
-        headers: {
-          Authorization: `Token ${token}`
-        },
-        ...options
-      })
+      let resp
+      try {
+        resp = await fetch(`${baseUrl}${path}`, {
+          headers: {
+            Authorization: `Token ${token}`
+          },
+          ...options
+        })
+      } catch {
+        console.log(`... failed at #${n} attempt`)
+        if (n < retryCount) {
+          await delay(retryDelayOthers)
+          continue
+        } else {
+          return reject()          
+        }
+      }
       if (resp.ok) {
-        resolve(resp)
+        return resolve(resp)
       } else {
         const rateLimitRemaining = parseInt([ ...resp.headers ].filter(obj => obj[0] === 'x-ratelimit-remaining')[0][1])
         const rateLimitLimit = parseInt([ ...resp.headers ].filter(obj => obj[0] === 'x-ratelimit-limit')[0][1])
@@ -46,7 +57,7 @@ function request(path, options = {}) {
         }
       }
     }
-    reject()
+    return reject()
   })
 }
 
@@ -55,9 +66,9 @@ function requestJson(path, options) {
     try {
       const response = await request(path, options) 
       const json = await response.json()
-      resolve(json)
+      return resolve(json)
     } catch (err) {
-      reject(err)
+      return reject(err)
     }
   })
 }
@@ -78,11 +89,24 @@ function requestAll(path, options) {
           page = null
         }
       }
-      resolve(items)
+      return resolve(items)
     } catch (err) {
-      reject(err)
+      return reject(err)
     }
   })
+}
+
+async function requestAllWithRetry(path, options) {
+  for (let n = 1; n <= retryCount; n++) {
+    try  {
+      const items = requestAll(path, options)
+      return items
+    } catch (err) {
+      if (n === 10) return err
+      console.log('... failed at attempt #' + n)
+      await delay(retryDelayOthers)
+    } 
+  }
 }
 
 function downloadFile(sourceFileUrl, targetFilePath) {
@@ -92,9 +116,9 @@ function downloadFile(sourceFileUrl, targetFilePath) {
     targetFilePath = targetFilePath + (ext ? '.' + ext : '')
     const fileStream = fs.createWriteStream(targetFilePath)
     response.body.pipe(fileStream)
-    response.body.on('error', reject)
+    response.body.on('error', () => { return reject() })
     fileStream.on('finish', () => {
-      resolve(targetFilePath)
+      return resolve(targetFilePath)
     })
   })
 }
@@ -112,9 +136,9 @@ function downloadAssets(body, folder, filename) {
         body = body.replace(`"${sourceUrl}"`, '"file://./assets/' + realTargetFilename + '"')
         body = body.replace(`(${sourceUrl})`, '(file://./assets/' + realTargetFilename + ')')
       }
-      resolve(body)
+      return resolve(body)
     } catch (err) {
-      reject(err)
+      return reject(err)
     }
   })
 }
@@ -132,7 +156,7 @@ async function backup() {
     fs.ensureDirSync(folder)
 
     // Get repositories
-    const repositories = await requestAll('/user/repos')
+    const repositories = await requestAllWithRetry('/user/repos')
 
     // Save repositories
     writeJSON(`${folder}/repositories.json`, repositories)
@@ -141,7 +165,7 @@ async function backup() {
     for (const repository of repositories) {
 
       // Get issues
-      const issues = await requestAll(`/repos/${username}/${repository.name}/issues?state=all`)
+      const issues = await requestAllWithRetry(`/repos/${username}/${repository.name}/issues?state=all`)
 
       // Loop issues
       for (const issueId in issues) {
@@ -154,7 +178,7 @@ async function backup() {
         )
 
         // Get issue comments
-        const comments = issues[issueId].comments !== 0 ? await requestAll(issues[issueId].comments_url) : []
+        const comments = issues[issueId].comments !== 0 ? await requestAllWithRetry(issues[issueId].comments_url) : []
 
         // Add issue comments to issues JSON
         issues[issueId].comments = comments
@@ -186,7 +210,7 @@ async function backup() {
     writeJSON(`${folder}/user/user.json`, user)
 
     // Get starred repositories
-    const starred = await requestAll('/user/starred')
+    const starred = await requestAllWithRetry('/user/starred')
     writeJSON(`${folder}/user/starred.json`, starred)
 
     // Complete script    
