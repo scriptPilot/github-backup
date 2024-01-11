@@ -9,6 +9,7 @@ Local backup of your GitHub data.
 - ✅ User: details and starred repositories  
 
 ## In Progress
+- ⏳ Readme: Images and file attachments
 - ⏳ Issues: File attachments
 - ⏳ Releases: including images, files and artifacts
 - ⏳ Projects: classic per repo and new projects per user
