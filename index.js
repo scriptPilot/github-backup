@@ -129,14 +129,14 @@ function downloadAssets(body, FOLDER, filename) {
   return new Promise(async (resolve, reject) => {
     try {
       const assets = body?.match(/["(]https:\/\/github\.com\/(.+)\/assets\/(.+)[)"]/g) || []
-      for (const assetId in assets) {
-        const targetFilename = filename.replace('{id}', assetId)
+      for (let n = 0; n < assets.length; n++) {
+        const targetFilename = filename.replace('{id}', (n+1).toString().padStart(assets.length.toString().length, '0'))
         const targetPath = FOLDER + '/' + targetFilename
-        const sourceUrl = assets[assetId].replace(/^["(](.+)[)"]$/, '$1')
+        const sourceUrl = assets[n].replace(/^["(](.+)[)"]$/, '$1')
         fs.ensureDirSync(FOLDER)
         const realTargetFilename = basename(await downloadFile(sourceUrl, targetPath))
-        body = body.replace(`"${sourceUrl}"`, '"file://./assets/' + realTargetFilename + '"')
-        body = body.replace(`(${sourceUrl})`, '(file://./assets/' + realTargetFilename + ')')
+        body = body.replace(`"${sourceUrl}"`, '"./assets/' + realTargetFilename + '"')
+        body = body.replace(`(${sourceUrl})`, '(./assets/' + realTargetFilename + ')')
       }
       return resolve(body)
     } catch (err) {
@@ -169,29 +169,29 @@ async function backup() {
       const issues = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/issues?state=all`)
 
       // Loop issues
-      for (const issueId in issues) {
-
+      for (const issue of issues) {
+        
         // Download issue assets
-        issues[issueId].body = await downloadAssets(
-          issues[issueId].body,
+        issue.body = await downloadAssets(
+          issue.body,
           `${FOLDER}/repositories/${repository.name}/assets`,
-          `issue_${issueId}_{id}`
+          `issue_${issue.id}_{id}`
         )
 
         // Get issue comments
-        const comments = issues[issueId].comments !== 0 ? await requestAllWithRetry(issues[issueId].comments_url) : []
+        const comments = issue.comments !== 0 ? await requestAllWithRetry(issue.comments_url) : []
 
         // Add issue comments to issues JSON
-        issues[issueId].comments = comments
+        issue.comments = comments
 
         // Loop issue comments
-        for (const commentId in comments) {
+        for (const comment of comments) {
 
           // Download issue assets
-          issues[issueId].comments[commentId].body = await downloadAssets(
-            issues[issueId].comments[commentId].body,
+          comment.body = await downloadAssets(
+            comment.body,
             `${FOLDER}/repositories/${repository.name}/assets`,
-            `issue_${issueId}_comment_${commentId}_{id}`
+            `issue_${issue.id}_comment_${comment.id}_{id}`
           )
 
         }
