@@ -13,7 +13,8 @@ Creates a local backup of your GitHub data.
 - ⏳ Repositories: attachments from markdown files
 - ⏳ Releases: attachments
 - ⏳ Issues: attachments
-- ⏳ Projects: related to repositories, users and organizations
+- ⏳ Projects v1: related to repositories, users and organizations
+- ⏳ Projects v2: related to repositories, users and organizations
 
 ## Usage
 
