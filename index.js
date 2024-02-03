@@ -274,7 +274,7 @@ async function backup() {
 
     // Complete script    
     console.log('Backup completed!')
-    shell.exit(1)
+    shell.exit()
 
   } catch (err) {
     throw new Error(err)
