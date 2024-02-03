@@ -1,6 +1,6 @@
 import fs from 'fs-extra'
 import shell from 'shelljs'
-import { dirname, basename } from 'path'
+import { dirname, basename, extname } from 'path'
 import fetch from 'node-fetch'
 import { extension } from 'mime-types'
 
@@ -12,7 +12,7 @@ const retryDelayRateLimit = 6 * 60
 const retryDelayOthers = 6
 
 const { USERNAME, TOKEN } = process.env
-const FOLDER = '/usr/src/backup'
+const folder = '/usr/src/backup'
 
 function delay(seconds) {
   return new Promise(resolve => {
@@ -31,10 +31,11 @@ function request(path, options = {}) {
       let resp
       try {
         resp = await fetch(`${baseUrl}${path}`, {
+          ...options,
           headers: {
-            Authorization: `Token ${TOKEN}`
-          },
-          ...options
+            Authorization: `Token ${TOKEN}`,
+            ...options.headers || {}
+          }
         })
       } catch {
         console.log(`... failed at #${n} attempt`)
@@ -113,9 +114,12 @@ async function requestAllWithRetry(path, options) {
 
 function downloadFile(sourceFileUrl, targetFilePath) {
   return new Promise(async (resolve, reject) => {
-    const response = await request(sourceFileUrl)
-    const ext = extension([ ...response.headers ].filter(obj => obj[0] === 'content-type')[0][1])
-    targetFilePath = targetFilePath + (ext ? '.' + ext : '')
+    const response = await request(sourceFileUrl, { headers: { Accept: 'application/octet-stream' }})    
+    if (!extname(targetFilePath)) {
+      const ext = extension([ ...response.headers ].filter(obj => obj[0] === 'content-type')[0][1])
+      targetFilePath = targetFilePath + (ext ? '.' + ext : '')
+    }
+    fs.ensureDirSync(dirname(targetFilePath))
     const fileStream = fs.createWriteStream(targetFilePath)
     response.body.pipe(fileStream)
     response.body.on('error', () => { return reject() })
@@ -125,18 +129,18 @@ function downloadFile(sourceFileUrl, targetFilePath) {
   })
 }
 
-function downloadAssets(body, FOLDER, filename) {
+function downloadImages(body, folder, filename) {
   return new Promise(async (resolve, reject) => {
     try {
-      const assets = body?.match(/["(]https:\/\/github\.com\/(.+)\/assets\/(.+)[)"]/g) || []
-      for (let n = 0; n < assets.length; n++) {
-        const targetFilename = filename.replace('{id}', (n+1).toString().padStart(assets.length.toString().length, '0'))
-        const targetPath = FOLDER + '/' + targetFilename
-        const sourceUrl = assets[n].replace(/^["(](.+)[)"]$/, '$1')
-        fs.ensureDirSync(FOLDER)
+      const images = body?.match(/["(]https:\/\/github\.com\/(.+)\/assets\/(.+)[)"]/g) || []
+      for (let n = 0; n < images.length; n++) {
+        const targetFilename = filename.replace('{id}', (n+1).toString().padStart(images.length.toString().length, '0'))
+        const targetPath = folder + '/' + targetFilename
+        const sourceUrl = images[n].replace(/^["(](.+)[)"]$/, '$1')
+        fs.ensureDirSync(folder)
         const realTargetFilename = basename(await downloadFile(sourceUrl, targetPath))
-        body = body.replace(`"${sourceUrl}"`, '"./assets/' + realTargetFilename + '"')
-        body = body.replace(`(${sourceUrl})`, '(./assets/' + realTargetFilename + ')')
+        body = body.replace(`"${sourceUrl}"`, '"./images/' + realTargetFilename + '"')
+        body = body.replace(`(${sourceUrl})`, '(./images/' + realTargetFilename + ')')
       }
       return resolve(body)
     } catch (err) {
@@ -153,14 +157,14 @@ function writeJSON(path, json) {
 async function backup() {
   try {
 
-    // Reset the backup FOLDER
-    fs.emptyDirSync(FOLDER)
+    // Reset the backup folder
+    fs.emptyDirSync(folder)
 
     // Get repositories
     const repositories = await requestAllWithRetry('/user/repos')
 
     // Save repositories
-    writeJSON(`${FOLDER}/repositories.json`, repositories)
+    writeJSON(`${folder}/repositories.json`, repositories)
 
     // Loop repositories
     for (const repository of repositories.filter(rep => rep.name === 'test')) {
@@ -171,10 +175,10 @@ async function backup() {
       // Loop issues
       for (const issue of issues) {
         
-        // Download issue assets
-        issue.body = await downloadAssets(
+        // Download issue images
+        issue.body = await downloadImages(
           issue.body,
-          `${FOLDER}/repositories/${repository.name}/assets`,
+          `${folder}/repositories/${repository.name}/images`,
           `issue_${issue.id}_{id}`
         )
 
@@ -187,10 +191,10 @@ async function backup() {
         // Loop issue comments
         for (const comment of comments) {
 
-          // Download issue assets
-          comment.body = await downloadAssets(
+          // Download issue comment images
+          comment.body = await downloadImages(
             comment.body,
-            `${FOLDER}/repositories/${repository.name}/assets`,
+            `${folder}/repositories/${repository.name}/images`,
             `issue_${issue.id}_comment_${comment.id}_{id}`
           )
 
@@ -199,20 +203,49 @@ async function backup() {
       }
 
       // Save issues
-      writeJSON(`${FOLDER}/repositories/${repository.name}/issues.json`, issues)
+      writeJSON(`${folder}/repositories/${repository.name}/issues.json`, issues)
+
+      // Get releases
+      const releases = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/releases`)
+
+      // Loop releases
+      for (const release of releases) {
+
+        // Download release text images
+        release.body = await downloadImages(
+          release.body,
+          `${folder}/repositories/${repository.name}/images`,
+          `release_${release.id}_{id}`
+        )
+
+        // Loop release assets
+        for (const asset of release.assets) {
+          
+          // Download release assets
+          downloadFile(
+            asset.url,
+            `${folder}/repositories/${repository.name}/releases/${release.tag_name}/${asset.name}`
+          )
+
+        }
+
+      }
+
+      // Save releases
+      writeJSON(`${folder}/repositories/${repository.name}/releases.json`, releases)
 
       // Clone repository
-      shell.exec(`git clone https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git ${FOLDER}/repositories/${repository.name}/repository`)
+      shell.exec(`git clone https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git ${folder}/repositories/${repository.name}/repository`)
 
     }
 
     // Get user details
     const user = await requestJson('/user')
-    writeJSON(`${FOLDER}/user/user.json`, user)
+    writeJSON(`${folder}/user/user.json`, user)
 
     // Get starred repositories
     const starred = await requestAllWithRetry('/user/starred')
-    writeJSON(`${FOLDER}/user/starred.json`, starred)
+    writeJSON(`${folder}/user/starred.json`, starred)
 
     // Complete script    
     console.log('Backup completed!')

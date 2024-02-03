@@ -5,13 +5,14 @@ Local backup of your GitHub data.
 ## In Scope
 
 - ✅ Repositories: cloned, public and private ones
+- ✅ Releases: including images and assets
 - ✅ Issues: including comments and images, open and closed ones
 - ✅ User: details and starred repositories  
 
 ## In Progress
 - ⏳ Readme: Images and file attachments
+- ⏳ Releases: File attachments
 - ⏳ Issues: File attachments
-- ⏳ Releases: including images, files and artifacts
 - ⏳ Projects: classic per repo and new projects per user
 
 ## Usage
