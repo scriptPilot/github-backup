@@ -4,15 +4,15 @@ Creates a local backup of your GitHub data.
 
 ## In Scope
 
-- ✅ Repositories: cloned, public and private ones
+- ✅ Repositories: cloned, public and private ones, images from markdown files
 - ✅ Releases: including images and assets
 - ✅ Issues: including comments and images, open and closed ones
 - ✅ User: details and starred repositories  
 
 ## In Progress
-- ⏳ Readme: Images and file attachments
 - ⏳ Releases: File attachments
 - ⏳ Issues: File attachments
+- ⏳ Markdown: File attachments
 - ⏳ Projects: classic per repo and new projects per user
 
 ## Usage

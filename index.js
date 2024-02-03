@@ -1,8 +1,9 @@
 import fs from 'fs-extra'
 import shell from 'shelljs'
-import { dirname, basename, extname } from 'path'
+import { relative, dirname, basename, extname } from 'path'
 import fetch from 'node-fetch'
 import { extension } from 'mime-types'
+import { glob } from 'glob'
 
 shell.config.fatal = true
 
@@ -129,7 +130,7 @@ function downloadFile(sourceFileUrl, targetFilePath) {
   })
 }
 
-function downloadImages(body, folder, filename) {
+function downloadImages(body, folder, filename, baseImagePath = './images') {
   return new Promise(async (resolve, reject) => {
     try {
       const images = body?.match(/["(]https:\/\/github\.com\/(.+)\/assets\/(.+)[)"]/g) || []
@@ -139,8 +140,8 @@ function downloadImages(body, folder, filename) {
         const sourceUrl = images[n].replace(/^["(](.+)[)"]$/, '$1')
         fs.ensureDirSync(folder)
         const realTargetFilename = basename(await downloadFile(sourceUrl, targetPath))
-        body = body.replace(`"${sourceUrl}"`, '"./images/' + realTargetFilename + '"')
-        body = body.replace(`(${sourceUrl})`, '(./images/' + realTargetFilename + ')')
+        body = body.replace(`"${sourceUrl}"`, `"${baseImagePath}/${realTargetFilename}"`)
+        body = body.replace(`(${sourceUrl})`, `(${baseImagePath}/${realTargetFilename})`)
       }
       return resolve(body)
     } catch (err) {
@@ -236,6 +237,30 @@ async function backup() {
 
       // Clone repository
       shell.exec(`git clone https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git ${folder}/repositories/${repository.name}/repository`)
+
+      // Get markdown files
+      const repoFolder = `${folder}/repositories/${repository.name}/repository/`
+      const imageFolder = `${folder}/repositories/${repository.name}/images/`
+      const markdownFiles = await glob(`${repoFolder}**/*.{md,MD}`)
+
+      // Loop markdown files
+      for (const markdownFile of markdownFiles) {
+
+        // Download markdown images
+        const baseImagePath = relative(dirname(markdownFile), imageFolder)
+        const imageFileBasename = markdownFile.replace(repoFolder, '').replace(/\//g, '_').replace(/\.md$/i, '')
+        let markdownFileContent = fs.readFileSync(markdownFile, { encoding: 'utf8' })
+        markdownFileContent = await downloadImages(
+          markdownFileContent,
+          imageFolder,
+          `markdown_${imageFileBasename}_{id}`,
+          baseImagePath
+        )
+
+        // Update markdown file
+        fs.writeFileSync(markdownFile, markdownFileContent)
+
+      }
 
     }
 
