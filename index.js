@@ -13,7 +13,7 @@ const retryDelayRateLimit = 6 * 60
 const retryDelayOthers = 6
 
 const { USERNAME, TOKEN } = process.env
-const folder = '/usr/src/backup'
+const folder = '/usr/src/backup' // Will be deleted entirely!
 
 function delay(seconds) {
   return new Promise(resolve => {
@@ -281,4 +281,5 @@ async function backup() {
   }
 }
 
+// Run the backup
 backup()

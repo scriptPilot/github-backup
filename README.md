@@ -4,17 +4,11 @@ Creates a local backup of your GitHub data.
 
 ## In Scope
 
-- ✅ Repositories: cloned, public and private ones, images from markdown files
+- ✅ Repositories: cloned, public and private ones
 - ✅ Releases: including images and assets
 - ✅ Issues: including comments and images, open and closed ones
-- ✅ User: details and starred repositories  
-
-## In Progress
-- ⏳ Repositories: attachments from markdown files
-- ⏳ Releases: attachments
-- ⏳ Issues: attachments
-- ⏳ Projects v1: related to repositories, users and organizations
-- ⏳ Projects v2
+- ✅ Markdown: images, uploaded to the GitHub editor
+- ✅ User: user details and starred repositories  
 
 ## Usage
 

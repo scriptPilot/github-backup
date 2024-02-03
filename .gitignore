@@ -1,8 +1,8 @@
-# System Files
+# Exclude system files
 .DS_Store
 
-# NPM Modules
+# Exclude Node modules
 node_modules/
 
-# Environment Variables File
+# Exclude the environment variables
 .env

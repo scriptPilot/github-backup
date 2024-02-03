@@ -1,20 +1,20 @@
-# User lightwight base image
+# Use a lightweight base image
 FROM node:20.9.0-alpine
 
 # Install Git
 RUN apk add --no-cache git
 
-# Define work directory
+# Define the work directory
 WORKDIR /usr/src/app
 
-# Copy package definition
+# Copy the package definition
 COPY package*.json ./
 
-# Install dependencies
+# Install all dependencies
 RUN npm install
 
-# Copy source files
+# Copy the source files
 COPY . .
 
-# Start backup script
+# Start the backup script
 CMD ["node", "index.js"]
