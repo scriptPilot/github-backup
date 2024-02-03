@@ -14,7 +14,7 @@ Creates a local backup of your GitHub data.
 - ⏳ Releases: attachments
 - ⏳ Issues: attachments
 - ⏳ Projects v1: related to repositories, users and organizations
-- ⏳ Projects v2: related to repositories, users and organizations
+- ⏳ Projects v2
 
 ## Usage
 
