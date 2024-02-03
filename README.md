@@ -10,9 +10,9 @@ Creates a local backup of your GitHub data.
 - ✅ User: details and starred repositories  
 
 ## In Progress
-- ⏳ Releases: File attachments
-- ⏳ Issues: File attachments
-- ⏳ Markdown: File attachments
+- ⏳ Repositories: attachments from markdown files
+- ⏳ Releases: attachments
+- ⏳ Issues: attachments
 - ⏳ Projects: classic per repo and new projects per user
 
 ## Usage
