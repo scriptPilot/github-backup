@@ -167,7 +167,7 @@ async function backup() {
     writeJSON(`${folder}/repositories.json`, repositories)
 
     // Loop repositories
-    for (const repository of repositories.filter(rep => rep.name === 'test')) {
+    for (const repository of repositories) {
 
       // Get issues
       const issues = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/issues?state=all`)
