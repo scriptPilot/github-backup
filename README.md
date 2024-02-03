@@ -2,7 +2,7 @@
 
 Creates a local backup of your GitHub data.
 
-## In Scope
+## Scope
 
 - ✅ Repositories: cloned, public and private ones
 - ✅ Releases: including images and assets
