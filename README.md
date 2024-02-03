@@ -1,6 +1,6 @@
 # Github Backup
 
-Local backup of your GitHub data.
+Creates a local backup of your GitHub data.
 
 ## In Scope
 
