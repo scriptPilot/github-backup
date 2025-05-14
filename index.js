@@ -272,6 +272,16 @@ async function backup() {
     const starred = await requestAllWithRetry('/user/starred')
     writeJSON(`${folder}/user/starred.json`, starred)
 
+    // Clone all starred repositories (main branch only) into owner/repository folder structure
+    for (const repo of starred) {
+      const owner = repo.owner.login
+      const name = repo.name
+      const targetPath = `${folder}/starred/${owner}/${name}`
+      fs.ensureDirSync(targetPath)
+      // Shallow clone only the default branch
+      shell.exec(`git clone https://${TOKEN}@github.com/${owner}/${name}.git "${targetPath}"`)
+    }
+
     // Complete script    
     console.log('Backup completed!')
     shell.exit()
