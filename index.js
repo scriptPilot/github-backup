@@ -279,7 +279,7 @@ async function backup() {
       const targetPath = `${folder}/starred/${owner}/${name}`
       fs.ensureDirSync(targetPath)
       // Shallow clone only the default branch
-      shell.exec(`git clone https://${TOKEN}@github.com/${owner}/${name}.git "${targetPath}"`)
+      shell.exec(`git clone https://${TOKEN}@github.com/${owner}/${name}.git --depth 1 "${targetPath}"`)
     }
 
     // Complete script    
