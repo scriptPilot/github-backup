@@ -313,6 +313,8 @@ async function backup() {
 
       // Clone or update git repository only if code changed
       if (codeChanged) {
+        // Remove macOS AppleDouble files from pack directory to avoid "non-monotonic index" errors
+        shell.exec(`find "${repoPath}/.git/objects/pack" -name '._*' -delete 2>/dev/null || true`)
         if (localExists) {
           console.log(`Updating git repository: ${repository.name}`)
           shell.exec(`git -C "${repoPath}" fetch --all && git -C "${repoPath}" reset --hard "origin/${defaultBranch}"`)
