@@ -288,16 +288,19 @@ async function backup() {
 
         // Get releases
         const releases = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/releases`)
+        const releaseImageFiles = []
 
         // Loop releases
         for (const release of releases) {
 
           // Download release text images
-          release.body = await downloadImages(
+          const releaseResult = await downloadImages(
             release.body,
             `${repoDir}/images`,
             `release_${release.id}_{id}`
           )
+          release.body = releaseResult.body
+          releaseImageFiles.push(...releaseResult.files)
 
           // Loop release assets
           for (const asset of release.assets) {
@@ -314,6 +317,9 @@ async function backup() {
 
         // Save releases
         writeJSON(`${repoDir}/releases.json`, releases)
+
+        // Clean up orphaned release images
+        cleanupImages(`${repoDir}/images`, 'release_', releaseImageFiles)
 
         // Clean up release folders for removed releases
         const releasesDir = `${repoDir}/releases`
@@ -348,6 +354,7 @@ async function backup() {
         const repoFolder = `${repoPath}/`
         const imageFolder = `${repoDir}/images/`
         const markdownFiles = await glob(`${repoFolder}**/*.{md,MD}`)
+        const markdownImageFiles = []
 
         for (const markdownFile of markdownFiles) {
 
@@ -355,17 +362,21 @@ async function backup() {
           const baseImagePath = relative(dirname(markdownFile), imageFolder)
           const imageFileBasename = markdownFile.replace(repoFolder, '').replace(/\//g, '_').replace(/\.md$/i, '')
           let markdownFileContent = fs.readFileSync(markdownFile, { encoding: 'utf8' })
-          markdownFileContent = await downloadImages(
+          const markdownResult = await downloadImages(
             markdownFileContent,
             imageFolder,
             `markdown_${imageFileBasename}_{id}`,
             baseImagePath
           )
+          markdownImageFiles.push(...markdownResult.files)
 
           // Update markdown file
-          fs.writeFileSync(markdownFile, markdownFileContent)
+          fs.writeFileSync(markdownFile, markdownResult.body)
 
         }
+
+        // Clean up orphaned markdown images
+        cleanupImages(imageFolder, 'markdown_', markdownImageFiles)
 
       } else {
         console.log(`Skipping unchanged git repository: ${repository.name}`)
