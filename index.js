@@ -13,7 +13,8 @@ const retryDelayRateLimit = 6 * 60
 const retryDelayOthers = 6
 
 const { USERNAME, TOKEN } = process.env
-const folder = '/usr/src/backup' // Will be deleted entirely!
+const folder = '/usr/src/backup'
+const metadataPath = `${folder}/metadata.json`
 
 function delay(seconds) {
   return new Promise(resolve => {
@@ -50,9 +51,11 @@ function request(path, options = {}) {
       if (resp.ok) {
         return resolve(resp)
       } else {
-        const rateLimitRemaining = parseInt([ ...resp.headers ].filter(obj => obj[0] === 'x-ratelimit-remaining')[0][1])
-        const rateLimitLimit = parseInt([ ...resp.headers ].filter(obj => obj[0] === 'x-ratelimit-limit')[0][1])
-        console.log(`... failed at #${n} attempt`)
+        const rateLimitHeader = [ ...resp.headers ].find(obj => obj[0] === 'x-ratelimit-remaining')
+        const rateLimitLimitHeader = [ ...resp.headers ].find(obj => obj[0] === 'x-ratelimit-limit')
+        const rateLimitRemaining = rateLimitHeader ? parseInt(rateLimitHeader[1]) : null
+        const rateLimitLimit = rateLimitLimitHeader ? parseInt(rateLimitLimitHeader[1]) : null
+        console.log(`... failed at #${n} attempt (status ${resp.status})`)
         if (rateLimitRemaining === 0) {
           console.log(`... API rate limit of ${rateLimitLimit} requests per hour exceeded`)
           if (n < retryCount) await delay(retryDelayRateLimit)
@@ -102,7 +105,7 @@ function requestAll(path, options) {
 
 async function requestAllWithRetry(path, options) {
   for (let n = 1; n <= retryCount; n++) {
-    try  {
+    try  {
       const items = requestAll(path, options)
       return items
     } catch (err) {
@@ -115,7 +118,20 @@ async function requestAllWithRetry(path, options) {
 
 function downloadFile(sourceFileUrl, targetFilePath) {
   return new Promise(async (resolve, reject) => {
-    const response = await request(sourceFileUrl, { headers: { Accept: 'application/octet-stream' }})    
+    // Skip download if file already exists (check with any extension if none specified)
+    if (!extname(targetFilePath)) {
+      const dir = dirname(targetFilePath)
+      const base = basename(targetFilePath)
+      if (fs.existsSync(dir)) {
+        const existing = fs.readdirSync(dir).filter(f => f.startsWith(base + '.'))
+        if (existing.length > 0) {
+          return resolve(`${dir}/${existing[0]}`)
+        }
+      }
+    } else if (fs.existsSync(targetFilePath)) {
+      return resolve(targetFilePath)
+    }
+    const response = await request(sourceFileUrl, { headers: { Accept: 'application/octet-stream' }})    
     if (!extname(targetFilePath)) {
       const ext = extension([ ...response.headers ].filter(obj => obj[0] === 'content-type')[0][1])
       targetFilePath = targetFilePath + (ext ? '.' + ext : '')
@@ -155,112 +171,195 @@ function writeJSON(path, json) {
   fs.writeJsonSync(path, json, { spaces: 2 })
 }
 
+function loadMetadata() {
+  try {
+    return fs.existsSync(metadataPath) ? fs.readJsonSync(metadataPath) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveMetadata(metadata) {
+  writeJSON(metadataPath, metadata)
+}
+
 async function backup() {
   try {
 
-    // Reset the backup folder
-    fs.emptyDirSync(folder)
+    // Ensure backup folder exists (no longer wiped)
+    fs.ensureDirSync(folder)
+
+    // Load metadata from previous backup
+    const metadata = loadMetadata()
+    const repoMeta = metadata.repositories || {}
+    const starredMeta = metadata.starred || {}
 
     // Get repositories
     const repositories = await requestAllWithRetry('/user/repos')
 
+    // Determine which repos were removed from GitHub
+    const currentRepoNames = new Set(repositories.map(r => r.name))
+    const existingRepoNames = new Set(Object.keys(repoMeta))
+    for (const name of existingRepoNames) {
+      if (!currentRepoNames.has(name)) {
+        console.log(`Removing deleted repository: ${name}`)
+        fs.removeSync(`${folder}/repositories/${name}`)
+      }
+    }
+
     // Save repositories
     writeJSON(`${folder}/repositories.json`, repositories)
+
+    // Track new metadata
+    const newRepoMeta = {}
 
     // Loop repositories
     for (const repository of repositories) {
 
-      // Get issues
-      const issues = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/issues?state=all`)
+      const prev = repoMeta[repository.name]
+      const repoDir = `${folder}/repositories/${repository.name}`
+      const repoPath = `${repoDir}/repository`
+      const localExists = fs.existsSync(`${repoPath}/.git`)
+      const isNew = !prev || !localExists
+      const dataChanged = isNew || prev.updated_at !== repository.updated_at
+      const codeChanged = isNew || prev.pushed_at !== repository.pushed_at
+      const defaultBranch = repository.default_branch || 'main'
 
-      // Loop issues
-      for (const issue of issues) {
-        
-        // Download issue images
-        issue.body = await downloadImages(
-          issue.body,
-          `${folder}/repositories/${repository.name}/images`,
-          `issue_${issue.id}_{id}`
-        )
+      // Process issues and releases only if data changed
+      if (dataChanged) {
+        console.log(`Processing ${isNew ? 'new' : 'updated'} repository data: ${repository.name}`)
 
-        // Get issue comments
-        const comments = issue.comments !== 0 ? await requestAllWithRetry(issue.comments_url) : []
+        // Get issues
+        const issues = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/issues?state=all`)
 
-        // Add issue comments to issues JSON
-        issue.comments = comments
-
-        // Loop issue comments
-        for (const comment of comments) {
-
-          // Download issue comment images
-          comment.body = await downloadImages(
-            comment.body,
-            `${folder}/repositories/${repository.name}/images`,
-            `issue_${issue.id}_comment_${comment.id}_{id}`
-          )
-
-        }
-        
-      }
-
-      // Save issues
-      writeJSON(`${folder}/repositories/${repository.name}/issues.json`, issues)
-
-      // Get releases
-      const releases = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/releases`)
-
-      // Loop releases
-      for (const release of releases) {
-
-        // Download release text images
-        release.body = await downloadImages(
-          release.body,
-          `${folder}/repositories/${repository.name}/images`,
-          `release_${release.id}_{id}`
-        )
-
-        // Loop release assets
-        for (const asset of release.assets) {
+        // Loop issues
+        for (const issue of issues) {
           
-          // Download release assets
-          downloadFile(
-            asset.url,
-            `${folder}/repositories/${repository.name}/releases/${release.tag_name}/${asset.name}`
+          // Download issue images
+          issue.body = await downloadImages(
+            issue.body,
+            `${repoDir}/images`,
+            `issue_${issue.id}_{id}`
           )
+
+          // Get issue comments
+          const comments = issue.comments !== 0 ? await requestAllWithRetry(issue.comments_url) : []
+
+          // Add issue comments to issues JSON
+          issue.comments = comments
+
+          // Loop issue comments
+          for (const comment of comments) {
+
+            // Download issue comment images
+            comment.body = await downloadImages(
+              comment.body,
+              `${repoDir}/images`,
+              `issue_${issue.id}_comment_${comment.id}_{id}`
+            )
+
+          }
+          
+        }
+
+        // Save issues
+        writeJSON(`${repoDir}/issues.json`, issues)
+
+        // Get releases
+        const releases = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/releases`)
+
+        // Loop releases
+        for (const release of releases) {
+
+          // Download release text images
+          release.body = await downloadImages(
+            release.body,
+            `${repoDir}/images`,
+            `release_${release.id}_{id}`
+          )
+
+          // Loop release assets
+          for (const asset of release.assets) {
+            
+            // Download release assets (skips if file already exists)
+            downloadFile(
+              asset.url,
+              `${repoDir}/releases/${release.tag_name}/${asset.name}`
+            )
+
+          }
 
         }
 
+        // Save releases
+        writeJSON(`${repoDir}/releases.json`, releases)
+
+        // Clean up release folders for removed releases
+        const releasesDir = `${repoDir}/releases`
+        if (fs.existsSync(releasesDir)) {
+          const currentTags = new Set(releases.map(r => r.tag_name))
+          for (const entry of fs.readdirSync(releasesDir)) {
+            const entryPath = `${releasesDir}/${entry}`
+            if (fs.statSync(entryPath).isDirectory() && !currentTags.has(entry)) {
+              console.log(`Removing deleted release: ${repository.name}/${entry}`)
+              fs.removeSync(entryPath)
+            }
+          }
+        }
+
+      } else {
+        console.log(`Skipping unchanged repository data: ${repository.name}`)
       }
 
-      // Save releases
-      writeJSON(`${folder}/repositories/${repository.name}/releases.json`, releases)
+      // Clone or update git repository only if code changed
+      if (codeChanged) {
+        if (localExists) {
+          console.log(`Updating git repository: ${repository.name}`)
+          shell.exec(`git -C "${repoPath}" fetch --all && git -C "${repoPath}" reset --hard "origin/${defaultBranch}"`)
+        } else {
+          console.log(`Cloning git repository: ${repository.name}`)
+          shell.exec(`git clone "https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git" "${repoPath}"`)
+        }
 
-      // Clone repository
-      shell.exec(`git clone https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git ${folder}/repositories/${repository.name}/repository`)
+        // Process markdown images (only after code changes since files come from the repo)
+        const repoFolder = `${repoPath}/`
+        const imageFolder = `${repoDir}/images/`
+        const markdownFiles = await glob(`${repoFolder}**/*.{md,MD}`)
 
-      // Get markdown files
-      const repoFolder = `${folder}/repositories/${repository.name}/repository/`
-      const imageFolder = `${folder}/repositories/${repository.name}/images/`
-      const markdownFiles = await glob(`${repoFolder}**/*.{md,MD}`)
+        for (const markdownFile of markdownFiles) {
 
-      // Loop markdown files
-      for (const markdownFile of markdownFiles) {
+          // Download markdown images
+          const baseImagePath = relative(dirname(markdownFile), imageFolder)
+          const imageFileBasename = markdownFile.replace(repoFolder, '').replace(/\//g, '_').replace(/\.md$/i, '')
+          let markdownFileContent = fs.readFileSync(markdownFile, { encoding: 'utf8' })
+          markdownFileContent = await downloadImages(
+            markdownFileContent,
+            imageFolder,
+            `markdown_${imageFileBasename}_{id}`,
+            baseImagePath
+          )
 
-        // Download markdown images
-        const baseImagePath = relative(dirname(markdownFile), imageFolder)
-        const imageFileBasename = markdownFile.replace(repoFolder, '').replace(/\//g, '_').replace(/\.md$/i, '')
-        let markdownFileContent = fs.readFileSync(markdownFile, { encoding: 'utf8' })
-        markdownFileContent = await downloadImages(
-          markdownFileContent,
-          imageFolder,
-          `markdown_${imageFileBasename}_{id}`,
-          baseImagePath
-        )
+          // Update markdown file
+          fs.writeFileSync(markdownFile, markdownFileContent)
 
-        // Update markdown file
-        fs.writeFileSync(markdownFile, markdownFileContent)
+        }
 
+      } else {
+        console.log(`Skipping unchanged git repository: ${repository.name}`)
       }
+
+      // Store metadata for this repo
+      newRepoMeta[repository.name] = {
+        updated_at: repository.updated_at,
+        pushed_at: repository.pushed_at
+      }
+      
+      // Save metadata progressively to allow safe interruptions
+      saveMetadata({
+        lastBackupAt: new Date().toISOString(),
+        repositories: { ...repoMeta, ...newRepoMeta },
+        starred: starredMeta
+      })
 
     }
 
@@ -272,15 +371,60 @@ async function backup() {
     const starred = await requestAllWithRetry('/user/starred')
     writeJSON(`${folder}/user/starred.json`, starred)
 
-    // Clone all starred repositories (main branch only) into owner/repository folder structure
+    // Determine which starred repos were removed
+    const currentStarredKeys = new Set(starred.map(r => `${r.owner.login}/${r.name}`))
+    const existingStarredKeys = new Set(Object.keys(starredMeta))
+    for (const key of existingStarredKeys) {
+      if (!currentStarredKeys.has(key)) {
+        console.log(`Removing unstarred repository: ${key}`)
+        fs.removeSync(`${folder}/starred/${key}`)
+        // Remove empty owner folder
+        const ownerDir = `${folder}/starred/${key.split('/')[0]}`
+        if (fs.existsSync(ownerDir) && fs.readdirSync(ownerDir).length === 0) {
+          fs.removeSync(ownerDir)
+        }
+      }
+    }
+
+    // Clone or update starred repositories
+    const newStarredMeta = {}
     for (const repo of starred) {
       const owner = repo.owner.login
       const name = repo.name
+      const key = `${owner}/${name}`
       const targetPath = `${folder}/starred/${owner}/${name}`
-      fs.ensureDirSync(targetPath)
-      // Shallow clone only the default branch
-      shell.exec(`git clone https://${TOKEN}@github.com/${owner}/${name}.git --depth 1 "${targetPath}"`)
+      const defaultBranch = repo.default_branch || 'main'
+      const prev = starredMeta[key]
+      const localExists = fs.existsSync(`${targetPath}/.git`)
+      const isChanged = !prev || !localExists || prev.pushed_at !== repo.pushed_at
+
+      if (localExists && isChanged) {
+        console.log(`Updating starred repository: ${key}`)
+        shell.exec(`git -C "${targetPath}" fetch --depth 1 origin && git -C "${targetPath}" reset --hard "origin/${defaultBranch}"`)
+      } else if (!localExists) {
+        console.log(`Cloning starred repository: ${key}`)
+        fs.ensureDirSync(targetPath)
+        shell.exec(`git clone "https://${TOKEN}@github.com/${owner}/${name}.git" --depth 1 "${targetPath}"`)
+      } else {
+        console.log(`Skipping unchanged starred repository: ${key}`)
+      }
+
+      newStarredMeta[key] = { pushed_at: repo.pushed_at }
+      
+      // Save metadata progressively for starred repos
+      saveMetadata({
+        lastBackupAt: new Date().toISOString(),
+        repositories: newRepoMeta,
+        starred: { ...starredMeta, ...newStarredMeta }
+      })
     }
+
+    // Save final complete metadata
+    saveMetadata({
+      lastBackupAt: new Date().toISOString(),
+      repositories: newRepoMeta,
+      starred: newStarredMeta
+    })
 
     // Complete script    
     console.log('Backup completed!')
