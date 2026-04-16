@@ -149,6 +149,7 @@ function downloadFile(sourceFileUrl, targetFilePath) {
 function downloadImages(body, folder, filename, baseImagePath = './images') {
   return new Promise(async (resolve, reject) => {
     try {
+      const files = []
       const images = body?.match(/["(]https:\/\/github\.com\/(.+)\/assets\/(.+)[)"]/g) || []
       for (let n = 0; n < images.length; n++) {
         const targetFilename = filename.replace('{id}', (n+1).toString().padStart(images.length.toString().length, '0'))
@@ -156,14 +157,26 @@ function downloadImages(body, folder, filename, baseImagePath = './images') {
         const sourceUrl = images[n].replace(/^["(](.+)[)"]$/, '$1')
         fs.ensureDirSync(folder)
         const realTargetFilename = basename(await downloadFile(sourceUrl, targetPath))
+        files.push(realTargetFilename)
         body = body.replace(`"${sourceUrl}"`, `"${baseImagePath}/${realTargetFilename}"`)
         body = body.replace(`(${sourceUrl})`, `(${baseImagePath}/${realTargetFilename})`)
       }
-      return resolve(body)
+      return resolve({ body, files })
     } catch (err) {
       return reject(err)
     }
   })
+}
+
+function cleanupImages(imagesDir, prefix, keepFiles) {
+  if (!fs.existsSync(imagesDir)) return
+  const keepSet = new Set(keepFiles)
+  for (const file of fs.readdirSync(imagesDir)) {
+    if (file.startsWith(prefix) && !keepSet.has(file)) {
+      console.log(`Removing orphaned image: ${file}`)
+      fs.removeSync(`${imagesDir}/${file}`)
+    }
+  }
 }
 
 function writeJSON(path, json) {
@@ -231,16 +244,19 @@ async function backup() {
 
         // Get issues
         const issues = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/issues?state=all`)
+        const issueImageFiles = []
 
         // Loop issues
         for (const issue of issues) {
           
           // Download issue images
-          issue.body = await downloadImages(
+          const issueResult = await downloadImages(
             issue.body,
             `${repoDir}/images`,
             `issue_${issue.id}_{id}`
           )
+          issue.body = issueResult.body
+          issueImageFiles.push(...issueResult.files)
 
           // Get issue comments
           const comments = issue.comments !== 0 ? await requestAllWithRetry(issue.comments_url) : []
@@ -252,11 +268,13 @@ async function backup() {
           for (const comment of comments) {
 
             // Download issue comment images
-            comment.body = await downloadImages(
+            const commentResult = await downloadImages(
               comment.body,
               `${repoDir}/images`,
               `issue_${issue.id}_comment_${comment.id}_{id}`
             )
+            comment.body = commentResult.body
+            issueImageFiles.push(...commentResult.files)
 
           }
           
@@ -264,6 +282,9 @@ async function backup() {
 
         // Save issues
         writeJSON(`${repoDir}/issues.json`, issues)
+
+        // Clean up orphaned issue images
+        cleanupImages(`${repoDir}/images`, 'issue_', issueImageFiles)
 
         // Get releases
         const releases = await requestAllWithRetry(`/repos/${USERNAME}/${repository.name}/releases`)
