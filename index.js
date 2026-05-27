@@ -458,6 +458,7 @@ async function backup() {
         shell.exec(`find "${repoPath}/.git/objects/pack" -name '._*' -delete 2>/dev/null || true`)
         if (localExists) {
           console.log(`Updating git repository: ${repository.name}`)
+          shell.exec(`git -C "${repoPath}" remote set-url origin "https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git"`)
           shell.exec(`git -C "${repoPath}" fetch --all && git -C "${repoPath}" reset --hard "origin/${defaultBranch}"`)
         } else {
           console.log(`Cloning git repository: ${repository.name}`)
