@@ -15,7 +15,7 @@ const retryDelayOthers = 6
 const { USERNAME, TOKEN } = process.env
 const folder = '/usr/src/backup'
 const metadataPath = `${folder}/metadata.json`
-const METADATA_VERSION = 3
+const METADATA_VERSION = 4
 
 function delay(seconds) {
   return new Promise(resolve => {
@@ -72,13 +72,25 @@ function request(path, options = {}) {
 function requestJson(path, options) {
   return new Promise(async (resolve, reject) => {
     try {
-      const response = await request(path, options) 
+      const response = await request(path, options)
       const json = await response.json()
       return resolve(json)
     } catch (err) {
       return reject(err)
     }
   })
+}
+
+async function requestGraphQL(query) {
+  const response = await requestJson('/graphql', {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+    headers: { 'Content-Type': 'application/json' }
+  })
+  if (response.errors) {
+    throw new Error(`GraphQL query failed: ${JSON.stringify(response.errors)}`)
+  }
+  return response.data
 }
 
 function requestAll(path, options) {
@@ -201,6 +213,64 @@ function writeJSON(path, json) {
   fs.ensureDirSync(dirname(path))
   fs.writeJsonSync(path, json, { spaces: 2 })
 }
+
+// Fields fetched for each repository inside a starred list (GraphQL)
+const starredListRepositoryFields = 'owner { login } name description primaryLanguage { name } stargazerCount forkCount updatedAt'
+
+function mapStarredListRepository(node) {
+  return {
+    full_name: `${node.owner.login}/${node.name}`,
+    owner: node.owner.login,
+    name: node.name,
+    description: node.description ?? null,
+    language: node.primaryLanguage ? node.primaryLanguage.name : null,
+    stargazers_count: node.stargazerCount,
+    forks_count: node.forkCount,
+    updated_at: node.updatedAt
+  }
+}
+
+// Fetch all starred lists of the authenticated user via GraphQL (viewer.lists),
+// paginating both the lists and their items
+async function fetchStarredLists() {
+  const lists = []
+  let after = null
+  while (true) {
+    const afterArg = after ? `, after: "${after}"` : ''
+    const data = await requestGraphQL(
+      `{ viewer { lists(first: 100${afterArg}) { pageInfo { hasNextPage endCursor } ` +
+      `nodes { id name items(first: 100) { pageInfo { hasNextPage endCursor } ` +
+      `nodes { ... on Repository { ${starredListRepositoryFields} } } } } } } }`
+    )
+    const connection = data.viewer.lists
+    for (const list of connection.nodes) {
+      console.log(`Fetching starred list: ${list.name} (${list.items.nodes.length})`)
+      const items = [...list.items.nodes]
+      // Fetch remaining item pages via node query (lists with more than 100 items)
+      let cursor = list.items.pageInfo.endCursor
+      while (list.items.pageInfo.hasNextPage) {
+        const more = await requestGraphQL(
+          `{ node(id: "${list.id}") { ... on UserList { items(first: 100, after: "${cursor}") { ` +
+          `pageInfo { hasNextPage endCursor } nodes { ... on Repository { ${starredListRepositoryFields} } } } } } }`
+        )
+        const page = more.node.items
+        items.push(...page.nodes)
+        if (!page.pageInfo.hasNextPage) break
+        cursor = page.pageInfo.endCursor
+      }
+      lists.push({
+        id: list.id,
+        name: list.name,
+        repositories_count: items.length,
+        repositories: items.map(mapStarredListRepository)
+      })
+    }
+    if (!connection.pageInfo.hasNextPage) break
+    after = connection.pageInfo.endCursor
+  }
+  return lists
+}
+
 
 function loadMetadata() {
   try {
@@ -651,6 +721,15 @@ async function backup() {
     } else if (fs.existsSync(starredDir)) {
       console.log('Removing starred folder (no starred repositories)')
       fs.removeSync(starredDir)
+    }
+
+    // Get starred lists and save starred_lists.json inside the starred folder
+    const starredLists = await fetchStarredLists()
+    if (starredLists.length > 0) {
+      writeJSON(`${starredDir}/starred_lists.json`, starredLists)
+    } else if (fs.existsSync(`${starredDir}/starred_lists.json`)) {
+      console.log('Removing starred_lists.json (no starred lists)')
+      fs.removeSync(`${starredDir}/starred_lists.json`)
     }
 
     // Save final complete metadata

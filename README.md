@@ -9,6 +9,7 @@ Creates a local backup of your GitHub data.
 - ✅ Issues: open and closed, comments and attachments
 - ✅ Markdown files: attachments
 - ✅ Starred repositories: shallow clone
+- ✅ Starred lists: details and contained repositories
 - ✅ User profile: details and avatar
 
 ## Usage
