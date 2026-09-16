@@ -119,10 +119,10 @@ function requestAll(path, options) {
 async function requestAllWithRetry(path, options) {
   for (let n = 1; n <= retryCount; n++) {
     try  {
-      const items = requestAll(path, options)
+      const items = await requestAll(path, options)
       return items
     } catch (err) {
-      if (n === 10) return err
+      if (n === retryCount) throw err
       console.log('... failed at attempt #' + n)
       await delay(retryDelayOthers)
     } 
@@ -172,7 +172,7 @@ function downloadAttachments(body, folder, filename, baseAttachmentPath = './att
   return new Promise(async (resolve, reject) => {
     try {
       const files = []
-      const attachments = body?.match(/["(]https:\/\/github\.com\/(.+)\/(assets|files)\/(.+)[)"]/g) || []
+      const attachments = body?.match(/["(]https:\/\/github\.com\/(.+?)\/(assets|files)\/(.+?)[)"]/g) || []
       for (let n = 0; n < attachments.length; n++) {
         const targetFilename = filename.replace('{id}', (n+1).toString().padStart(attachments.length.toString().length, '0'))
         const targetPath = folder + '/' + targetFilename
@@ -528,11 +528,12 @@ async function backup() {
         shell.exec(`find "${repoPath}/.git/objects/pack" -name '._*' -delete 2>/dev/null || true`)
         if (localExists) {
           console.log(`Updating git repository: ${repository.name}`)
-          shell.exec(`git -C "${repoPath}" remote set-url origin "https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git"`)
-          shell.exec(`git -C "${repoPath}" fetch --all && git -C "${repoPath}" reset --hard "origin/${defaultBranch}"`)
+          const remoteUrl = `https://github.com/${USERNAME}/${repository.name}.git`
+          shell.exec(`git -C "${repoPath}" remote set-url origin "${remoteUrl}"`)
+          shell.exec(`git -C "${repoPath}" -c 'credential.helper=!f() { echo username=x-access-token; echo password=\${TOKEN}; }; f' fetch --all && git -C "${repoPath}" reset --hard "origin/${defaultBranch}"`)
         } else {
           console.log(`Cloning git repository: ${repository.name}`)
-          shell.exec(`git clone "https://${TOKEN}@github.com/${USERNAME}/${repository.name}.git" "${repoPath}"`)
+          shell.exec(`git -c 'credential.helper=!f() { echo username=x-access-token; echo password=\${TOKEN}; }; f' clone "https://github.com/${USERNAME}/${repository.name}.git" "${repoPath}"`)
         }
 
         // Process markdown attachments into /markdown/{relative-path}/{filename.md}/
