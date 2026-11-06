@@ -17,5 +17,5 @@ Creates a local backup of your GitHub data.
 Requirements: [Docker](https://www.docker.com/), [GitHub Token](https://github.com/settings/tokens)
 
 1. Clone this repository
-2. Update and save `.env.template` file as `.env`
+2. Run `cp .env.template .env` and update the credentials
 3. Run `make` to start the backup process

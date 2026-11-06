@@ -16,7 +16,13 @@ docker_cleanup: docker_start
 	docker stop github-backup || true
 	docker rm github-backup || true
 
-# Start the Docker Daemon
+# Start the Docker Daemon (Docker Desktop or OrbStack)
 docker_start:
-	open -a Docker && \
-	while ! docker info > /dev/null 2>&1; do sleep 1; done
+	@if open -a Docker 2>/dev/null; then \
+		echo "Starting Docker Desktop..."; \
+	elif open -a OrbStack 2>/dev/null; then \
+		echo "Starting OrbStack..."; \
+	else \
+		echo "Unable to find Docker Desktop or OrbStack"; exit 1; \
+	fi
+	@while ! docker info > /dev/null 2>&1; do sleep 1; done
